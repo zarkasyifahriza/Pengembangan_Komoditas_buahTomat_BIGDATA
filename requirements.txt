@@ -1,0 +1,9 @@
+Flask
+pandas
+numpy
+matplotlib
+statsmodels
+scikit-learn
+joblib
+opencv-python
+scikit-image

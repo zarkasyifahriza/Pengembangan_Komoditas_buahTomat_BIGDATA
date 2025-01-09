@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clustering dan Forecasting Harga Tomat</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        /* Mengatur peta agar memenuhi seluruh layar */
+        body, html {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* Menambahkan pengaturan untuk peta */
+        #map_html {
+            height: 100vh;  /* Mengisi seluruh tinggi layar */
+            width: 100%;    /* Mengisi seluruh lebar layar */
+        }
+
+        .legend {
+            background-color: white;
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            position: absolute;
+            top: 20px;
+            left: 50px;
+            z-index: 9999;
+        }
+        .legend div {
+            margin-bottom: 8px;
+        }
+        .legend .color-box {
+            width: 20px;
+            height: 20px;
+            display: inline-block;
+            margin-right: 10px;
+        }
+        .map-container {
+            position: relative;
+        }
+        .map-title {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%); /* Untuk memusatkan secara horizontal */
+            padding: 5px 10px;
+            font-size: 40px;
+            border-radius: 5px;
+            font-weight: bold;
+            z-index: 1000;
+        }
+
+        img {
+            width: 100%;
+            max-width: 800px;
+            margin: 20px 0;
+        }
+
+        .forecast {
+            margin-top: 30px;
+        }
+
+        .forecast-row {
+            display: none;
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out;
+        }
+
+        .forecast-row.show {
+            display: table-row;
+            opacity: 1;
+        }
+
+        /* Sidebar Styles */
+        .sidebar {
+            position: fixed;
+            top: 0;
+            right: -300px;
+            width: 300px;
+            height: 100%;
+            background-color: #f8f9fa;
+            padding: 20px;
+            box-shadow: -4px 0 6px rgba(0, 0, 0, 0.1);
+            transition: right 0.3s;
+        }
+
+        .sidebar.active {
+            right: 0;
+        }
+
+        .sidebar .close-btn {
+            font-size: 20px;
+            color: #000;
+            cursor: pointer;
+        }
+
+        .sidebar h3 {
+            margin-bottom: 20px;
+        }
+
+        .sidebar .form-label {
+            font-weight: bold;
+        }
+
+        .sidebar .btn-primary {
+            width: 100%;
+        }
+
+        .toggle-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px;
+            font-size: 16px;
+            cursor: pointer;
+            z-index: 10000;
+        }
+
+    </style>
+</head>
+<body>
+    <!-- Tombol untuk membuka sidebar -->
+    <button class="toggle-btn" onclick="toggleSidebar()">Toggle Sidebar</button>
+    <!-- Langsung tampilkan peta di halaman utama -->
+    <div id="map_html">
+        {% if map_html %}
+        <div class="map-title">Pengembangan Komoditas Buah Tomat</div>
+        {{ map_html|safe }}
+        {% else %}
+        <div class="map-title">Data Peta Tidak Tersedia</div>
+        <div style="display: flex; justify-content: center; align-items: center; height: 100%;">
+            <p>Peta tidak dapat ditampilkan. Silakan periksa data Anda.</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="container my-5">
+        <!-- Menampilkan Hasil Prediksi Harga Tomat -->
+        {% if forecast %}
+        <div class="forecast">
+            <h2 class="text-center mb-4">Hasil Prediksi Harga Tomat</h2>
+            <div class="d-flex justify-content-between">
+                <button class="btn btn-success" onclick="prevSlide()">&#10094; Sebelumnya</button>
+                <button class="btn btn-success" onclick="nextSlide()">Selanjutnya &#10095;</button>
+            </div>
+            <table class="table table-striped table-bordered mt-3" id="forecast-table">
+                <thead>
+                    <tr>
+                        <th>Tanggal</th>
+                        <th>Harga Prediksi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in forecast %}
+                    <tr class="forecast-row">
+                        <td>{{ item.date }}</td>
+                        <td>{{ item.price }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="alert alert-warning" role="alert">
+            Hasil prediksi tidak tersedia. Silakan lakukan forecasting terlebih dahulu.
+        </div>
+        {% endif %}
+
+        <!-- Menambahkan Legenda untuk Clustering -->
+        <div class="legend">
+            <h5 class="mb-3">Legenda Clustering</h5>
+            <div>
+                <span class="color-box" style="background-color: #ff0000;"></span> Cluster 0
+            </div>
+            <div>
+                <span class="color-box" style="background-color: #ff8000;"></span> Cluster 1
+            </div>
+            <div>
+                <span class="color-box" style="background-color: #ffff00;"></span> Cluster 2
+            </div>
+            <div>
+                <span class="color-box" style="background-color: #00ff00;"></span> Cluster 3
+            </div>
+        </div>
+
+        <!-- Menampilkan Gambar Plot -->
+        <h2 class="text-center mt-5 mb-4">Plot Data dan Prediksi</h2>
+        <div class="row text-center">
+            <div class="col-md-4 mb-4">
+                <div class="card shadow-sm">
+                    <div class="card-body">
+                        <h5 class="card-title">Plot Data Aktual</h5>
+                        <img src="{{ url_for('static', filename='plot_data.png') }}" alt="Plot Data" class="img-fluid rounded">
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-4">
+                <div class="card shadow-sm">
+                    <div class="card-body">
+                        <h5 class="card-title">ACF dan PACF Analysis</h5>
+                        <img src="{{ url_for('static', filename='plot_acf_pacf.png') }}" alt="ACF dan PACF" class="img-fluid rounded">
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-4">
+                <div class="card shadow-sm">
+                    <div class="card-body">
+                        <h5 class="card-title">Plot Prediksi</h5>
+                        <img src="{{ url_for('static', filename='plot_forecast.png') }}" alt="Plot Forecast" class="img-fluid rounded">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sidebar untuk Klasifikasi Gambar -->
+    <div id="sidebar" class="sidebar">
+        <button class="close-btn" onclick="hideSidebar()">Tutup</button>
+        <h3>Prediksi Kematangan Tomat</h3>
+        <p>Unggah gambar tomat di bawah ini:</p>
+        <form id="upload-form" method="POST" action="/" enctype="multipart/form-data">
+            <div class="mb-3">
+                <label for="file" class="form-label">Unggah gambar:</label>
+                <input type="file" id="file" name="file" accept="image/*" class="form-control" required />
+            </div>
+            <button type="submit" class="btn btn-primary">Prediksi</button>
+        </form>
+        <div id="prediction-result" class="mt-4">
+            <h3>Hasil Prediksi:</h3>
+            {% if results %}
+            <div class="row">
+                {% for result in results %}
+                <div class="col-md-6">
+                    <div class="card bg-secondary text-white mb-3">
+                        <div class="card-body">
+                            <h5 class="card-title">{{ result.filename }}</h5>
+                            <p class="card-text">Prediksi: <strong>{{ result.prediction }}</strong></p>
+                            <img src="{{ result.image_url }}" class="img-fluid rounded" />
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- JavaScript untuk Sidebar -->
+    <script>
+        function toggleSidebar() {
+            document.getElementById("sidebar").classList.toggle("active");
+        }
+
+        function hideSidebar() {
+            document.getElementById("sidebar").classList.remove("active");
+        }
+    </script>
+
+    <script>
+        let currentSlide = 0;
+        const rows = document.querySelectorAll('.forecast-row');
+        const totalSlides = rows.length;
+
+        function showSlide(index) {
+            rows.forEach((row, i) => {
+                row.classList.remove('show');
+                if (i === index) {
+                    row.classList.add('show');
+                }
+            });
+        }
+
+        function nextSlide() {
+            currentSlide = (currentSlide + 1) % totalSlides;
+            showSlide(currentSlide);
+        }
+
+        function prevSlide() {
+            currentSlide = (currentSlide - 1 + totalSlides) % totalSlides;
+            showSlide(currentSlide);
+        }
+
+        showSlide(currentSlide);
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.6/dist/umd/popper.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.min.js"></script>
+</body>
+</html>
